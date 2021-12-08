@@ -1,4 +1,4 @@
-import { Module } from '@rnet.cf/rnet-core';
+import {Module} from '@rnet.cf/rnet-core';
 import * as eris from '@rnet.cf/eris';
 import * as rnet from 'RNet';
 
@@ -14,8 +14,6 @@ export default class CoordsChannel extends Module {
 	public list        : boolean = true;
 	public enabled     : boolean = false;
 	public hasPartial  : boolean = true;
-
-	private _floatRegex: RegExp;
 
 	get settings() {
 		return {

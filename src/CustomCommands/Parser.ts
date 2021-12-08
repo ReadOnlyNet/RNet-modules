@@ -2,29 +2,23 @@ import {Base} from '@rnet.cf/rnet-core';
 import * as eris from '@rnet.cf/eris';
 import * as rnet from 'RNet';
 import * as moment from 'moment-timezone';
-import CustomCommands from '.';
+import {default as CustomCommands} from './index';
 
 export default class Parser extends Base {
 	public module: CustomCommands;
 
 	private channelRegex: RegExp = new RegExp('{#([a-zA-Z0-9-_]+)}', 'g');
-	private roleRegex: RegExp = new RegExp('{&([^}]+)}', 'g');
-	private userRegex: RegExp = new RegExp('{@([^}]+)}', 'g');
-
-	private argsRegex: RegExp = new RegExp(/\$([0-9\+]+)/, 'g');
-	private argUserRegex: RegExp = new RegExp(/\$([0-9]+)\.user\.([a-zA-Z]+)/, 'g');
-	private argRoleRegex: RegExp = new RegExp(/\$([0-9]+)\.role\.([a-zA-Z]+)/, 'g');
-	private argChannelRegex: RegExp = new RegExp(/\$([0-9]+)\.channel\.([a-zA-Z]+)/, 'g');
+	private roleRegex: RegExp = new RegExp('{&([a-zA-Z0-9-_ ]+)}', 'g');
+	private userRegex: RegExp = new RegExp('{@(.*)}', 'g');
 
 	constructor(module: CustomCommands) {
 		super(module.rnet);
 		this.module = module;
 	}
 
-	public parse(message: eris.Message, channel: any, content: string, data: any, mentionUser: boolean = true) {
+	public parse(content: string, data: any, mentionUser: boolean = true) {
 		if (!content) { return; }
 
-		const params = message.content.split(' ');
 		const time = moment().tz(data.guildConfig.timezone || 'America/New_York');
 		const rules = [
 			{ str: '{date}',      match: /{date}/gi, replace: time.format('MMM DD, YYYY') },
@@ -42,69 +36,12 @@ export default class Parser extends Base {
 			{ str: '{user.',      match: /{user\.([\w\d]+)}/gi, replace: this.parseProperties.bind(this, data, 'user') },
 			{ str: '{server.',    match: /{server\.([\w\d]+)}/gi, replace: this.parseProperties.bind(this, data, 'guild') },
 			{ str: '{channel.',   match: /{channel\.([\w\d]+)}/gi, replace: this.parseProperties.bind(this, data, 'channel') },
-			{ str: '{#',          match: /{#([^}]+)}/g, replace: this.parseMention.bind(this, data, 'channels') },
-			{ str: '{&',          match: /{&([^}]+)}/g, replace: this.parseMention.bind(this, data, 'roles') },
+			{ str: '{#',          match: /{#([a-zA-Z0-9-_]+)}/g, replace: this.parseMention.bind(this, data, 'channels') },
+			{ str: '{&',          match: /{&([a-zA-Z0-9-_ ]+)}/g, replace: this.parseMention.bind(this, data, 'roles') },
 			{ str: '{@',          match: /{@(.*)}/g, replace: this.parseMention.bind(this, data, 'members') },
-			{ str: '{choose',     match: /{choose([0-9]+)?:([^}]*)}/g, replace: this.choose.bind(this, data) },
-			{ str: '{choice',     match: /{choice([0-9]+)?}/g, replace: this.choice.bind(this, data) },
+			{ str: '{choose:',    match: /{choose:([^}]*)}/g, replace: this.choose.bind(this, data) },
+			{ str: '{choice}',    match: /{choice}/g, replace: this.choice.bind(this, data) },
 		];
-
-		content = content.replace(this.argUserRegex, (match: any, index: any, key: any) => {
-			if (params.slice(1).length < index) { return ''; }
-
-			const r = this.parseArgs(params, index);
-			if (!r) {
-				return '';
-			}
-
-			const user = this.resolveUser((<eris.GuildChannel>message.channel).guild, r);
-			const result = this.parseArgProperties(user, key, 'user');
-			if (result != undefined) {
-				return result;
-			}
-
-			return user[key];
-		});
-
-		content = content.replace(this.argRoleRegex, (match: any, index: any, key: any) => {
-			if (params.slice(1).length < index) { return ''; }
-
-			const r = this.parseArgs(params, index);
-			if (!r) {
-				return '';
-			}
-
-			const role = this.resolveRole((<eris.GuildChannel>message.channel).guild, r);
-			const result = this.parseArgProperties(role, key);
-			if (result != undefined) {
-				return result;
-			}
-
-			return role[key];
-		});
-
-		content = content.replace(this.argChannelRegex, (match: any, index: any, key: any) => {
-			if (params.slice(1).length < index) { return ''; }
-
-			const r = this.parseArgs(params, index);
-			if (!r) {
-				return '';
-			}
-
-			const chan = this.resolveChannel((<eris.GuildChannel>message.channel).guild, r);
-			const result = this.parseArgProperties(channel, key);
-			if (result != undefined) {
-				return result;
-			}
-
-			return chan[key];
-		});
-
-		content = content.replace(this.argsRegex, (match: any, index: any) => {
-			if (params.slice(1).length < index) { return; }
-
-			return this.parseArgs(params, index);
-		});
 
 		for (const rule of rules) {
 			if (content.includes(rule.str)) {
@@ -115,60 +52,27 @@ export default class Parser extends Base {
 		return content;
 	}
 
-	private parseArgs(params: string[], index: any) {
-		let r;
-
-		if (index.includes('+')) {
-			index = parseInt(index.replace('+', ''), 10);
-			r = params.slice(1).slice(--index).join(' ');
-		} else {
-			r = params.slice(1)[--index];
+	private choose(data: any, match: any, value: string) {
+		if (value) {
+			data.choices = value.replace(/\s?;\s?/g, ';').split(';');
+			data.choice = data.choices[Math.floor(Math.random() * data.choices.length)];
 		}
-
-		r = r && r.replace(/({|})/g, '');
-
-		return r || '';
+		return '';
 	}
 
-	private parseArgProperties(data: any, key: string, cache: string = '') {
-		if (!data) {
-			return '';
-		}
+	private choice(data: any) {
+		return data.choice || '';
+	}
 
-		if (typeof data[key] !== 'string' && typeof data[key] !== 'number') {
-			return '';
-		}
-
-		if (cache === 'user' && key === 'name') {
-			return this.utils.fullName(data[key]);
-		}
-		if (key === 'nick') {
-			return data.nick || data.username;
-		}
-		if (key === 'joinedAt' || key === 'createdAt' && data[key]) {
-			return moment.unix(data[key] / 1000).format('llll');
-		}
-		if (key === 'discrim') {
-			return data.discriminator;
-		}
-		if (key === 'icon') {
-			return data.iconURL;
-		}
-		if (key === 'avatar') {
-			return data.avatarURL;
-		}
-		if (key === 'color') {
-			return (`00000${data.color.toString(16)}`).slice(-6);
-		}
+	private parseMention(data: any, collection: string, match: any, value: string) {
+		const result = data.guild[collection].find((d: any) => (d.name && d.name === value) || (d.username && d.username === value));
+		return result ? result.mention : '';
 	}
 
 	private parseProperties(data: any, cache: string, match: any, key: string) {
 		if (!data[cache]) { return ''; }
 		if (cache === 'user' && key === 'name') {
 			return this.utils.fullName(data[cache]);
-		}
-		if (key === 'nick') {
-			return data.nick || data.username;
 		}
 		if (key === 'joinedAt' || key === 'createdAt') {
 			return moment.unix(data[cache][key] / 1000).format('llll');
@@ -187,26 +91,5 @@ export default class Parser extends Base {
 		}
 
 		return data[cache][key];
-	}
-
-	private choose(data: any, match: any, index: string, value: string) {
-		const i = index || 0;
-		if (value) {
-			data.choices = data.choices || [];
-			data.choice = data.choice || [];
-			data.choices[i] = value.replace(/\s?;\s?/g, ';').split(';');
-			data.choice[i] = data.choices[i][Math.floor(Math.random() * data.choices[i].length)];
-		}
-		return '';
-	}
-
-	private choice(data: any, match: any, index: number) {
-		const i = index || 0;
-		return data.choice[i] || '';
-	}
-
-	private parseMention(data: any, collection: string, match: any, value: string) {
-		const result = data.guild[collection].find((d: any) => (d.name && d.name === value) || (d.username && d.username === value));
-		return result ? result.mention : '';
 	}
 }

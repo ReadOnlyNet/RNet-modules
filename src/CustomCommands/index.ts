@@ -1,8 +1,7 @@
-import { Module } from '@rnet.cf/rnet-core';
+import {Module} from '@rnet.cf/rnet-core';
 import * as eris from '@rnet.cf/eris';
 import * as each from 'async-each';
 import * as rnet from 'RNet';
-import * as moment from 'moment-timezone';
 import * as commands from './commands';
 import Parser from './Parser';
 
@@ -20,24 +19,18 @@ export default class CustomCommands extends Module {
 	public hasPartial  : boolean = true;
 	public commands    : {}      = commands;
 
-	private parser     : Parser;
+	private reqRoleRegex: RegExp = new RegExp(/{require: (.*)}/, 'g');
+	private negRoleRegex: RegExp = new RegExp(/{not:(.*)}/, 'g');
+	private reqChannelRegex: RegExp = new RegExp(/{require:#(.*)}/, 'g');
+	private negChannelRegex: RegExp = new RegExp(/{not:#(.*)}/, 'g');
 
-	private reqRoleRegex: RegExp = new RegExp(/{require:(.*?)}/, 'g');
-	private negRoleRegex: RegExp = new RegExp(/{not:(.*?)}/, 'g');
-	private reqChannelRegex: RegExp = new RegExp(/{require:#(.*?)}/, 'g');
-	private negChannelRegex: RegExp = new RegExp(/{not:#(.*?)}/, 'g');
-	private commandRegex: RegExp = new RegExp(/{!((?:(?:.|\n)(?:{.+})*)+?)}/, 'g');
+	private commandRegex: RegExp = new RegExp(/{!(.*)}/, 'g');
 	private argsRegex: RegExp = new RegExp(/\$([0-9\+]+)/, 'g');
-	private argUserRegex: RegExp = new RegExp(/\$([0-9]+)\.user\.([a-zA-Z]+)/, 'g');
-	private argRoleRegex: RegExp = new RegExp(/\$([0-9]+)\.role\.([a-zA-Z]+)/, 'g');
-	private argChannelRegex: RegExp = new RegExp(/\$([0-9]+)\.channel\.([a-zA-Z]+)/, 'g');
+	private mentionRegex: RegExp = new RegExp(/\$([0-9]+)\.user\.([a-zA-Z]+)/, 'g');
 	private textRegex: RegExp = new RegExp(/{=(?:([\w_-]+)=)?(.*)}/, 'g');
-	private resChannelRegex: RegExp = new RegExp(/{respond:#(.*?)}/);
-	// private sendRegex: RegExp = new RegExp(/{send([#a-zA-Z-_])? (.*)}/);
-	private dmRegex: RegExp = new RegExp(/{dm:(.*?)}/);
-
-	private _cooldowns: Map<string, any>;
-	private _customCooldowns: Map<string, any>;
+	private resChannelRegex: RegExp = new RegExp(/{respond:#(.*)}/);
+	private sendRegex: RegExp = new RegExp(/{send([#a-zA-Z-_])?:(.*)}/);
+	private dmRegex: RegExp = new RegExp(/{dm:(.*)}/);
 
 	get settings() {
 		return {
@@ -48,23 +41,7 @@ export default class CustomCommands extends Module {
 	public start() {
 		this.parser = new Parser(this);
 		this._cooldowns = new Map();
-		this._customCooldowns = new Map();
 		this.schedule('*/2 * * * *', this.clearCooldowns.bind(this));
-	}
-
-	public async shouldCooldown(message: eris.Message, command: any, name: string) {
-		try {
-			const cooldown = await this.redis.get(`${this.config.client.id}.${name}.${message.author.id}`);
-
-			if (command.cooldown && cooldown && (Date.now() - cooldown) < command.cooldown) {
-				return true;
-			}
-
-			return false;
-		} catch (err) {
-			this.logger.error(err);
-			return false;
-		}
 	}
 
 	/**
@@ -73,7 +50,7 @@ export default class CustomCommands extends Module {
 	 * @returns {*}
 	 */
 	// tslint:disable-next-line:cyclomatic-complexity
-	public async messageCreate({ message, guildConfig }: any) {
+	public messageCreate({ message, guildConfig }: any) {
 		if (!message.channel.guild ||
 			!message.member ||
 			(message.author && message.author.bot)) { return; }
@@ -82,7 +59,7 @@ export default class CustomCommands extends Module {
 
 		guildConfig.prefix = guildConfig.prefix || '?';
 
-		if (!message.content.startsWith(guildConfig.prefix) && !message.content.startsWith(this.config.localPrefix)) { return; }
+		if (!message.content.startsWith(guildConfig.prefix)) { return; }
 		if (!guildConfig.customcommands || !guildConfig.customcommands.commands) { return; }
 
 		const globalConfig = this.rnet.globalConfig || {};
@@ -92,7 +69,7 @@ export default class CustomCommands extends Module {
 
 		const cmds = guildConfig.customcommands.commands;
 		const params = message.content.split(' ');
-		const cmd = params[0].replace(guildConfig.prefix, '').replace(this.config.localPrefix, '').toLowerCase();
+		const cmd = params[0].replace(guildConfig.prefix, '').toLowerCase();
 		const coreCommand = this.rnet.commands.get(cmd);
 
 		if (coreCommand && coreCommand.permissions !== 'admin') { return; }
@@ -105,13 +82,8 @@ export default class CustomCommands extends Module {
 
 		process.nextTick(() => this.statsd.increment('customcommands.all'));
 
-		const command = cmds[cmd];
-		let response = command.response;
-		let deleteCommand = command.delete || false;
-
-		if (await this.shouldCooldown(message, command, cmd)) {
-			return;
-		}
+		let response = commands[cmd].response;
+		let deleteAfter = false;
 
 		const data = {
 			guild: message.channel.guild,
@@ -120,46 +92,50 @@ export default class CustomCommands extends Module {
 			guildConfig,
 		};
 
-		const sendOpts = {
-			disableEveryone: command.noEveryone || false,
-			dm: command.dm ? message.author : false,
-		};
+		const sendOpts = { disableEveryone: false, dm: null };
 
 		if (response.includes('{noeveryone}')) {
-			response = response.replace(/{noeveryone}/gi, '');
 			sendOpts.disableEveryone = true;
 		}
 
-		response = this.canExecute(command, response, data);
+		response = this.canExecute(response, data);
 		if (!response) { return; }
 
-		const args = response.match(this.argsRegex);
-		const argsCount = params ? params.length - 1 : 0;
+		response = response.replace(this.argsRegex, (match: any, index: any) => {
+			if (params.slice(1).length < index) { return; }
 
-		if (command.args && argsCount < command.args) {
-			return;
-		}
+			let r;
 
-		let channel = message.channel;
+			if (index.includes('+')) {
+				index = index.replace('+', '');
+				r = params.slice(1).slice(--index).join(' ');
+			} else {
+				r = params.slice(1)[--index];
+			}
 
-		response = this.parser.parse(message, channel, response, data);
+			r = r.replace(/({|})/g, '');
+			return r;
+		});
+
+		response = this.parser.parse(response, data);
 		if (!response) { return; }
-
-		let responseChannel;
-
-		if (command.responseChannel) {
-			responseChannel = (<eris.GuildChannel>message.channel).guild.channels.find((c: eris.GuildChannel) => c.id === command.responseChannel);
-		}
-
-		if (!responseChannel) {
-			responseChannel = this.getResponseChannel(message, response);
-		}
-
-		channel = responseChannel || message.channel;
 
 		if (response.includes('{delete}')) {
-			deleteCommand = true;
+			deleteAfter = true;
 			response = response.replace(/{delete}/gi, '');
+		}
+
+		if (response.includes('<@')) {
+			response = response.replace(this.mentionRegex, (match: any, index: any, key: any) => {
+				if (params.slice(1).length < index) { return; }
+
+				const user = message.mentions[--index];
+
+				if (typeof user[key] !== 'string' && typeof user[key] !== 'number') {
+					return '';
+				}
+				return user[key];
+			});
 		}
 
 		if (response.includes('{dm}')) {
@@ -175,6 +151,9 @@ export default class CustomCommands extends Module {
 			}
 		}
 
+		const responseChannel = this.getResponseChannel(message, response);
+		const channel = responseChannel || message.channel;
+
 		if (response.includes('{respond')) {
 			response = response.replace(this.resChannelRegex, '');
 		}
@@ -184,7 +163,7 @@ export default class CustomCommands extends Module {
 		// }
 
 		if (response.indexOf('{!') > -1) {
-			return this.executeCommands(command, response, message, guildConfig, { responseChannel }).then((res: string) => {
+			return this.executeCommands(response, message, guildConfig, { responseChannel }).then((res: string) => {
 				if (res && res.length) {
 					if (responseChannel) {
 						res = res.replace(/{respond:#([a-zA-Z-_]+)}/g, '');
@@ -194,41 +173,16 @@ export default class CustomCommands extends Module {
 						res = `${message.channel.guild.name}: ${res}`;
 					}
 
-					if (command.cooldown) {
-						this.redis.set(`${this.config.client.id}.${cmd}.${message.author.id}`, Date.now(), 'PX', command.cooldown).catch(() => null);
-					}
-
-					if (command.responses && command.responses.length) {
-						this.executeResponses(command, message, data);
-					}
-
 					return this.sendMessage(channel, res, sendOpts)
-						.then((m: eris.Message) => {
-							if (command.deleteAfter && !isNaN(command.deleteAfter)) {
-								setTimeout(() => {
-									if (!m || !m.channel) { return; }
-									this.client.deleteMessage(m.channel.id, m.id).catch(() => null);
-								}, command.deleteAfter * 1000);
-							}
-						})
 						.catch(() => false)
 						.then(() => {
-							if (deleteCommand) {
+							if (deleteAfter) {
 								message.delete().catch(() => false);
 							}
-
 							process.nextTick(() => this.statsd.increment('customcommands.executed'));
 						});
-				} else {
-					if (deleteCommand) {
-						message.delete().catch(() => false);
-					}
 				}
 			});
-		} else {
-			if (deleteCommand) {
-				message.delete().catch(() => false);
-			}
 		}
 
 		if (response && response.length) {
@@ -236,71 +190,19 @@ export default class CustomCommands extends Module {
 				response = response.replace(/{respond:#([a-zA-Z-_]+)}/g, '');
 			}
 
-			if (sendOpts.dm) {
-				response = `${message.channel.guild.name}: ${response}`;
-			}
-
-			if (command.cooldown) {
-				this.redis.set(`${this.config.client.id}.${cmd}.${message.author.id}`, Date.now(), 'PX', command.cooldown).catch(() => null);
-			}
-
-			if (command.responses && command.responses.length) {
-				this.executeResponses(command, message, data);
-			}
-
 			return this.sendMessage(channel, response, sendOpts)
-				.then((m: eris.Message) => {
-					if (command.deleteAfter && !isNaN(command.deleteAfter)) {
-						setTimeout(() => {
-							if (!m || !m.channel) { return; }
-							this.client.deleteMessage(m.channel.id, m.id).catch(() => null);
-						}, command.deleteAfter * 1000);
-					}
-				})
 				.catch(() => false)
 				.then(() => {
-					if (deleteCommand) {
+					if (deleteAfter) {
 						message.delete().catch(() => false);
 					}
-
 					process.nextTick(() => this.statsd.increment('customcommands.executed'));
 				});
 		}
 	}
 
-	// tslint:disable-next-line:cyclomatic-complexity
-	private canExecute(command: any, response: string, e: any) {
+	private canExecute(response: string, e: any) {
 		if (!response) { return; }
-
-		const { channel, user } = e;
-
-		if (command.ignoredRoles && command.ignoredRoles.length) {
-			const hasIgnoredRole = command.ignoredRoles.find((r: any) => e.user.roles.includes(r.id));
-			if (hasIgnoredRole && !this.permissionsManager.isServerAdmin(user, channel)) {
-				return null;
-			}
-		}
-
-		if (command.allowedRoles && command.allowedRoles.length) {
-			const hasAllowedRole = command.allowedRoles.find((r: any) => e.user.roles.includes(r.id));
-			if (!hasAllowedRole && !this.permissionsManager.isServerAdmin(user, channel)) {
-				return null;
-			}
-		}
-
-		if (command.ignoredChannels && command.ignoredChannels.length) {
-			if ((command.ignoredChannels.find((c: any) => c.id === e.channel.id || (e.channel.parentID && c.id === e.channel.parentID))) &&
-				!this.permissionsManager.isServerAdmin(user, channel)) {
-					return null;
-				}
-		}
-
-		if (command.allowedChannels && command.allowedChannels.length) {
-			if (!command.allowedChannels.find((c: any) => c.id === e.channel.id || (e.channel.parentID && c.id === e.channel.parentID)) &&
-				!this.permissionsManager.isServerAdmin(user, channel)) {
-					return null;
-				}
-		}
 
 		if (response && (response.includes('{require:#') || response.includes('{not:#'))) {
 			response = this.requireChannels(response, e);
@@ -406,19 +308,19 @@ export default class CustomCommands extends Module {
 
 	private getResponseChannel(message: eris.Message, response: string) {
 		if (response.indexOf('{respond:#') === -1) {
-			return null;
+			return message.channel;
 		}
 
 		const match = response.match(this.resChannelRegex);
 		if (!match || !match.length || !match[1]) {
-			return null;
+			return message.channel;
 		}
 
 		const channel = (<eris.GuildChannel>message.channel).guild.channels.find((c: eris.GuildChannel) => c.id === match[1] ||
 						c.name.toLowerCase() === match[1].toLowerCase());
 
 		if (!channel) {
-			return null;
+			return message.channel;
 		}
 
 		return channel;
@@ -430,63 +332,12 @@ export default class CustomCommands extends Module {
 		return this.resolveUser((<eris.GuildChannel>message.channel).guild, userMatch[1]);
 	}
 
-	private executeResponses(command: any, message: eris.Message, data: any) {
-		const guild = (<eris.GuildChannel>message.channel).guild;
-		let channel;
-		let sendDM;
-
-		this.utils.asyncForEach(command.responses, async response => {
-			if (!response.channel) { return; }
-			switch (response.channel) {
-				case 'commandChannel':
-					channel = message.channel;
-					break;
-				case 'userChannel':
-					sendDM = true;
-					break;
-				default:
-					channel = guild.channels.find(c => c.id === response.channel);
-					if (!channel) { return; }
-					break;
-			}
-
-			// tslint:disable-next-line:switch-default
-			switch (response.type) {
-				case 'message':
-					if (!response.value) { break; }
-
-					const content = this.parser.parse(message, message.channel, response.value, data);
-
-					return sendDM ?
-						this.sendDM(message.author.id, content).catch(() => null) :
-						this.sendMessage(channel, content).catch(() => null);
-				case 'embed':
-					if (!response.embed) { break; }
-					try {
-						// stringify the embed so we only have to run it through the parser once
-						let embedStr = JSON.stringify(response.embed);
-						embedStr = this.parser.parse(message, message.channel, embedStr, data);
-
-						// parse it back to an object
-						const embed = JSON.parse(embedStr);
-
-						return sendDM ?
-							this.sendDM(message.author.id, { embed }).catch(() => null) :
-							this.sendMessage(channel, { embed }).catch(() => null);
-					} catch (err) {
-						this.logger.error(err);
-						return;
-					}
-			}
-		});
-	}
-
-	private async executeCommands(command: any, response: string, message: eris.Message, guildConfig: rnet.GuildConfig, options: any = {}) {
+	private async executeCommands(response: string, message: eris.Message, guildConfig: rnet.GuildConfig, options: any = {}) {
 		let match;
 		const cmds = this.rnet.commands;
 
 		const responseChannel = options.responseChannel;
-		const suppressOutput = command.silent || response.includes('{silent}');
+		const suppressOutput = response.includes('{silent}');
 		response = response.replace('{silent}', '');
 
 		const usedCommands = new Map();
@@ -497,13 +348,13 @@ export default class CustomCommands extends Module {
 
 			const cmd = commandString.split(' ')[0];
 			const args = commandString.split(' ').slice(1);
-			const coreCommand = this.rnet.commands.get(cmd);
+			const command = this.rnet.commands.get(cmd);
 
-			if (!coreCommand || coreCommand.permissions === 'admin') { continue; }
+			if (!command || command.permissions === 'admin') { continue; }
 
-			let usedCount = usedCommands.get(coreCommand.name) || 0;
+			let usedCount = usedCommands.get(command.name) || 0;
 
-			if (coreCommand.name === 'warn' && usedCommands.has('warn')) {
+			if (command.name === 'warn' && usedCommands.has('warn')) {
 				continue;
 			}
 
@@ -511,10 +362,10 @@ export default class CustomCommands extends Module {
 				continue;
 			}
 
-			usedCommands.set(coreCommand.name, ++usedCount);
+			usedCommands.set(command.name, ++usedCount);
 
-			if (coreCommand) {
-				const c = new coreCommand.constructor(this.rnet);
+			if (command) {
+				const c = new command.constructor(this.rnet);
 				c.name = c.aliases[0];
 
 				const executeStart = Date.now();
@@ -529,11 +380,11 @@ export default class CustomCommands extends Module {
 				})
 				.then(() => {
 					const time = Date.now() - executeStart;
-					cmds.emit('command', { command: coreCommand, message, guildConfig, args, time });
+					cmds.emit('command', { command, message, guildConfig, args, time });
 				})
 				.catch(() => {
 					const time = Date.now() - executeStart;
-					cmds.emit('error', { command: coreCommand, message, guildConfig, args, time });
+					cmds.emit('error', { command, message, guildConfig, args, time });
 				});
 			}
 
@@ -548,12 +399,6 @@ export default class CustomCommands extends Module {
 			const time = this._cooldowns.get(id);
 			if ((Date.now() - time) < 2000) { return; }
 			this._cooldowns.delete(id);
-		});
-
-		each([...this._customCooldowns.keys()], (id: string) => {
-			const customCooldown = this._customCooldowns.get(id);
-			if ((Date.now() - customCooldown.time) < customCooldown.cooldown) { return; }
-			this._customCooldowns.delete(id);
 		});
 	}
 }

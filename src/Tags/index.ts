@@ -1,4 +1,4 @@
-import { Module } from '@rnet.cf/rnet-core';
+import {Module} from '@rnet.cf/rnet-core';
 import * as eris from '@rnet.cf/eris';
 import * as rnet from 'RNet';
 import * as commands from './commands';
@@ -20,8 +20,7 @@ export default class Tags extends Module {
 
 	public start() {}
 
-	// tslint:disable-next-line:cyclomatic-complexity
-	public async createOrEdit(message: eris.Message, tag: string, content: string, guildConfig: rnet.GuildConfig, isEdit?: boolean) {
+	public async createOrEdit(message: eris.Message, tag: string, content: string, guildConfig: rnet.GuildConfig) {
 		const guild = (<eris.GuildChannel>message.channel).guild;
 		if (!this.isEnabled(guild, this, guildConfig)) {
 			return Promise.reject(null);
@@ -29,8 +28,6 @@ export default class Tags extends Module {
 
 		const tagConfig = guildConfig.tags;
 		let edit = false;
-		let count: number;
-		let result: any;
 
 		if (tagConfig && tagConfig.limitCreate) {
 			let canCreate = false;
@@ -39,7 +36,6 @@ export default class Tags extends Module {
 			if (this.isAdmin(message.member) ||
 				this.isServerAdmin(message.member, message.channel) ||
 				this.isServerMod(message.member, message.channel)) {
-					canCreate = true;
 					canEdit = true;
 			}
 
@@ -51,34 +47,19 @@ export default class Tags extends Module {
 						}
 					}
 				}
-
-				if (!canCreate) {
-					return Promise.reject(`You don't have permissions to create or edit this tag.`);
-				}
+				return Promise.reject(`You don't have permissions to create or edit this tag.`);
 			}
 
 			try {
-				[count, result] = await Promise.all([
-					this.models.Tag.count({ guild: guild.id }),
-					this.models.Tag.findOne({ guild: guild.id, tag: tag }).lean().exec(),
-				]);
+				const result = await this.models.Tag.findOne({ guild: guild.id, tag: tag }).lean().exec();
 				canEdit = (result && result.author.id === message.member.id) ? true : canEdit;
 				if (result) {
-					if (!isEdit) {
-						return Promise.reject(`That tag already exists.`);
-					}
 					if (!canEdit) {
 						return Promise.reject(`You don't have permissions to edit this tag.`);
 					} else {
 						edit = true;
 					}
 				}
-			} catch (err) {
-				return Promise.reject(`Something went wrong.`);
-			}
-		} else {
-			try {
-				count = await this.models.Tag.count({ guild: guild.id });
 			} catch (err) {
 				return Promise.reject(`Something went wrong.`);
 			}
@@ -93,10 +74,6 @@ export default class Tags extends Module {
 
 		if (edit) {
 			delete doc.author;
-		} else {
-			if (count >= (this.globalConfig.maxTags || 6000)) {
-				return Promise.reject(`You have created too many tags.`);
-			}
 		}
 
 		try {
@@ -119,10 +96,6 @@ export default class Tags extends Module {
 			tag = await this.models.Tag.findOne({ guild: guild.id, tag: _tag }).lean().exec();
 		} catch (err) {
 			return Promise.reject('Something went wrong.');
-		}
-
-		if (!tag || !tag.author) {
-			return Promise.reject(`That tag doesn't exist.`);
 		}
 
 		let canDelete = false;
@@ -172,7 +145,7 @@ export default class Tags extends Module {
 		return Promise.resolve(doc.content);
 	}
 
-	public async listTags(message: eris.Message, guildId: string, guildConfig: rnet.GuildConfig, query?: string) {
+	public async listTags(message: eris.Message, guildId: string, guildConfig: rnet.GuildConfig) {
 		const guild = (<eris.GuildChannel>message.channel).guild;
 		if (!this.isEnabled(guild, this, guildConfig)) {
 			return Promise.reject(null);
@@ -180,14 +153,9 @@ export default class Tags extends Module {
 
 		guildId = guildId || guild.id;
 
-		let count: number;
-		let tags: any[];
-
+		let tags;
 		try {
-			[count, tags] = await Promise.all([
-				this.models.Tag.count({ guild: guildId }),
-				this.models.Tag.find({ guild: guildId }).limit(100).lean().exec(),
-			]);
+			tags = await this.models.Tag.find({ guild: guildId }).lean().exec();
 		} catch (err) {
 			return Promise.reject(`Something went wrong.`);
 		}
@@ -196,13 +164,9 @@ export default class Tags extends Module {
 			return Promise.resolve('There are no tags.');
 		}
 
-		if (query != undefined) {
-			tags = tags.filter((t: any) => t.tag.toLowerCase().search(query) > -1);
-		}
-
 		const embed = {
 			color: this.utils.getColor('blue'),
-			title: `Tags (${count})`,
+			title: 'Tags',
 			description: null,
 			fields: [],
 			footer: { text: `Use "${guildConfig.prefix || '?'}tag name" to show a tag` },

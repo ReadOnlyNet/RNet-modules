@@ -1,4 +1,4 @@
-import { Module } from '@rnet.cf/rnet-core';
+import {Module} from '@rnet.cf/rnet-core';
 import * as eris from '@rnet.cf/eris';
 import * as rnet from 'RNet';
 import * as commands from './commands';
@@ -14,12 +14,10 @@ export default class Slowmode extends Module {
 	public description : string   = 'Rate limit the number of messages members can send in a channel.';
 	public list        : boolean  = true;
 	public enabled     : boolean  = false;
-	public hasPartial  : boolean  = true;
+	public hasPartial  : boolean  = false;
 	public vipOnly     : boolean  = true;
 	public permissions : string[] = ['manageMessages'];
 	public commands    : {}       = commands;
-
-	private cooldowns: Map<string, number>;
 
 	get settings() {
 		return {
@@ -72,20 +70,13 @@ export default class Slowmode extends Module {
 	 * @param {Message} message Message object
 	 * @returns {void}
 	 */
-	// tslint:disable-next-line:cyclomatic-complexity
 	public messageCreate({ message, guildConfig, isAdmin }: any) {
 		if (!this.rnet.isReady || !guildConfig) {
 			return;
 		}
-
 		if (!message.channel.guild || !message.author || message.author.bot || !message.member) {
 			return;
 		}
-
-		if (!guildConfig.isPremium) {
-			return;
-		}
-
 		if (isAdmin || this.isServerMod(message.member, message.channel)) {
 			return;
 		}
@@ -93,7 +84,6 @@ export default class Slowmode extends Module {
 		if (!this.isEnabled(message.channel.guild, this, guildConfig)) {
 			return;
 		}
-
 		if (!this.hasPermissions(message.channel.guild, 'manageMessages')) {
 			return;
 		}

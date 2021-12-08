@@ -1,15 +1,16 @@
-import { Command, CommandData, SubCommand } from '@rnet.cf/rnet-core';
+import {Command} from '@rnet.cf/rnet-core';
+import * as core from '@rnet.cf/rnet-core';
 import * as eris from '@rnet.cf/eris';
 
 export default class ActionLog extends Command {
 	public aliases: string[]      = ['actionlog'];
-	public group: string        = 'Action Log';
+	public group: string        = 'Manager';
 	public description: string  = 'Configure actionlog settings.';
 	public defaultUsage: string = 'actionlog help';
 	public permissions: string  = 'serverAdmin';
 	public cooldown: number     = 5000;
 	public expectedArgs: number = 0;
-	public commands: SubCommand[] = [
+	public commands: core.SubCommand[] = [
 		{ name: 'ignorechannel', desc: 'Ignore/unignore a channel', usage: 'actionlog ignorechannel [channel|name]' },
 		{ name: 'ignored', desc: 'List ignored channels', usage: 'actionlog list' },
 	];
@@ -25,7 +26,7 @@ export default class ActionLog extends Command {
 		return Promise.resolve();
 	}
 
-	public ignorechannel({ message, args, guildConfig }: CommandData) {
+	public ignorechannel({ message, args, guildConfig }: core.CommandData) {
 		const guild = (<eris.GuildChannel>message.channel).guild;
 		if (!args || !args.length) {
 			return this.help(message, guildConfig);
@@ -54,7 +55,7 @@ export default class ActionLog extends Command {
 			.catch(() => this.error(message.channel, 'Something went wrong.'));
 	}
 
-	public ignored({ message, args, guildConfig }: CommandData) {
+	public ignored({ message, args, guildConfig }: core.CommandData) {
 		if (!guildConfig.actionlog) {
 			return this.error(message.channel, `Action log is not configured yet.`);
 		}

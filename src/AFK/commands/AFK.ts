@@ -1,4 +1,5 @@
-import { Command, CommandData, SubCommand } from '@rnet.cf/rnet-core';
+import {Command} from '@rnet.cf/rnet-core';
+import * as core from '@rnet.cf/rnet-core';
 import * as eris from '@rnet.cf/eris';
 import {default as AFKModule} from '../index';
 
@@ -12,11 +13,11 @@ export default class AFK extends Command {
 	public defaultUsage  : string   = 'afk';
 	public cooldown      : number   = 30000;
 
-	public commands: SubCommand[] = [
+	public commands: core.SubCommand[] = [
 		{ name: 'set', desc: `Set an AFK status shown when you're mentioned, and display in nickname.`,
 			usage: 'set [status]', cooldown: 61000 },
 		{ name: 'ignore', desc: `Use in a channel to not return from AFK when talking in that channel.`,
-			usage: 'ignore [channel]', cooldown: 5000 },
+			usage: 'ignore', cooldown: 5000 },
 	];
 
 	public usage: string[] = [
@@ -36,7 +37,7 @@ export default class AFK extends Command {
 		return Promise.resolve();
 	}
 
-	public set({ message, args, guildConfig }: CommandData): Promise<any> {
+	public set({ message, args, guildConfig }: core.CommandData): Promise<any> {
 		const status = args && args.length ? args.join(' ') : 'AFK';
 
 		if (this._afk.isAFK(message, guildConfig) && (!args || !args.length)) {
@@ -48,8 +49,8 @@ export default class AFK extends Command {
 			.catch(() => null);
 	}
 
-	public ignore({ message, args }: CommandData): Promise<any> {
-		if (!this.isServerMod(message.member, message.channel)) {
+	public ignore({ message }: core.CommandData): Promise<any> {
+		if (!this.isAdmin(message.author) || !this.isServerMod(message.member, message.channel)) {
 			return;
 		}
 		const guildConfig = this.rnet.guilds.get((<eris.GuildChannel>message.channel).guild.id);

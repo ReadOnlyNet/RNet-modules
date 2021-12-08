@@ -1,4 +1,4 @@
-import { Module } from '@rnet.cf/rnet-core';
+import {Module} from '@rnet.cf/rnet-core';
 import * as eris from '@rnet.cf/eris';
 import * as rnet from 'RNet';
 
@@ -14,9 +14,6 @@ export default class Announcements extends Module {
 	public enabled    : boolean = true;
 	public hasPartial : boolean = true;
 
-	private bans: string[];
-	private defaults: any;
-
 	get settings() {
 		return {
 			channel:      String,
@@ -31,7 +28,7 @@ export default class Announcements extends Module {
 	}
 
 	public start() {
-		this.defaults = this.rnet.globalConfig.announcements;
+		this.defaults = this.config.announcements;
 		this.bans = [];
 
 		this.schedule('*/1 * * * *', this.clearBans.bind(this));
@@ -94,17 +91,11 @@ export default class Announcements extends Module {
 			joinMessage = this.defaults.joinMessage;
 		}
 
-		const sendOpts : any = {};
-
-		if (joinMessage.includes('{everyone}') || joinMessage.includes('{here}')) {
-			sendOpts.disableEveryone = false;
-		}
-
 		const data = { guild: guild, channel: channel, user: member };
 		const message = this.utils.replacer(joinMessage, data);
 
 		if (!dmJoins) {
-			return this.sendMessage(channel, message, sendOpts);
+			return this.sendMessage(channel, message);
 		}
 
 		return this.client.getDMChannel(member.id)

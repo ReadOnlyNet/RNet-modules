@@ -19,16 +19,12 @@ export default class VoiceTextLinking extends Module {
 
 	public permissions: string[] = ['manageChannels'];
 
-	public purger: Purger;
-
 	get settings() {
 		return {
 			purgeChannel: { type: Boolean, default: false },
 			announceMember: { type: Boolean, default: false },
-			mentionMember: { type: Boolean, default: false },
 			joinMessage: { type: String, default: `{user} has joined the channel.` },
 			leaveMessage: { type: String, default: `{user} has left the channel.` },
-			channels: { type: Array, default: [] },
 		};
 	}
 
@@ -36,48 +32,38 @@ export default class VoiceTextLinking extends Module {
 		this.purger = new Purger(this.config, this.rnet);
 	}
 
-	public getTextChannel(channel: eris.TextChannel, guildConfig: any) {
-		const voiceConfig = guildConfig.voicetextlinking;
-
-		if (!voiceConfig.channels) {
-			return;
-		}
-
-		const channels = voiceConfig.channels.find((o: any) => o.voiceChannel === channel.id);
-		if (channels && channels.textChannel) {
-			return channel.guild.channels.find((c: eris.GuildChannel) => c.type === 0 && c.id === channels.textChannel);
-		}
+	public getTextChannel(channel: eris.TextChannel) {
+		const name = channel.name.toLowerCase().replace(/[^a-z0-9\-_+]+/gi, '');
+		return channel.guild.channels.find((c: eris.GuildChannel) => c.type === 0 && c.name.startsWith('voice-') && c.name.endsWith(name));
 	}
 
 	public memberJoin(channel: eris.VoiceChannel, textChannel: eris.AnyGuildChannel, member: eris.Member, guildConfig: rnet.GuildConfig) {
-		const voiceConfig = guildConfig.voicetextlinking;
-		if (!voiceConfig) { return; }
-		if (voiceConfig.announceMember) {
-			let message = voiceConfig.joinMessage || `{user} has joined the channel.`;
+		if (!guildConfig.voicetextlinking) { return; }
+		if (guildConfig.voicetextlinking.announceMember) {
+			let message = guildConfig.voicetextlinking.joinMessage || `{user} has joined the channel.`;
 			message = message.replace(/{user}/gi, member.mention);
 			this.sendMessage(textChannel, message);
 		}
 	}
 
 	public memberLeave(channel: eris.VoiceChannel, textChannel: eris.AnyGuildChannel, member: eris.Member, guildConfig: rnet.GuildConfig) {
-		const voiceConfig = guildConfig.voicetextlinking;
-		if (!voiceConfig) { return; }
-		if (voiceConfig.announceMember) {
-			let message = voiceConfig.leaveMessage || `{user} has left the channel.`;
+		if (!guildConfig.voicetextlinking) { return; }
+		if (guildConfig.voicetextlinking.announceMember) {
+			let message = guildConfig.voicetextlinking.leaveMessage || `{user} has left the channel.`;
 			message = message.replace(/{user}/gi, member.mention);
 			this.sendMessage(textChannel, message);
 		}
 
-		if (voiceConfig.purgeChannel) {
+		if (guildConfig.voicetextlinking.purgeChannel) {
 			if (channel.voiceMembers.size === 0) {
-				this.purger.purge(<eris.TextChannel>textChannel, 5000).catch(() => null);
+				this.purger.purge(textChannel, 5000).catch(() => null);
 			}
 		}
 	}
 
 	public voiceChannelJoin({ guild, member, channel, guildConfig }: any) {
 		if (!this.isEnabled(guild, this.module, guildConfig)) { return; }
-		const textChannel = this.getTextChannel(channel, guildConfig);
+		const textChannel = this.getTextChannel(channel);
 		if (textChannel) {
 			textChannel.editPermission(member.id, 68608, null, 'member')
 				.then(() => this.memberJoin(channel, textChannel, member, guildConfig))
@@ -87,7 +73,7 @@ export default class VoiceTextLinking extends Module {
 
 	public voiceChannelLeave({ guild, member, channel, guildConfig }: any) {
 		if (!this.isEnabled(guild, this.module, guildConfig)) { return; }
-		const textChannel = this.getTextChannel(channel, guildConfig);
+		const textChannel = this.getTextChannel(channel);
 		if (textChannel) {
 			textChannel.deletePermission(member.id)
 				.then(() => this.memberLeave(channel, textChannel, member, guildConfig))
@@ -97,22 +83,16 @@ export default class VoiceTextLinking extends Module {
 
 	public voiceChannelSwitch({ guild, member, channel, oldChannel, guildConfig }: any) {
 		if (!this.isEnabled(guild, this.module, guildConfig)) { return; }
-		const textChannel = this.getTextChannel(channel, guildConfig);
-		const oldTextChannel = this.getTextChannel(oldChannel, guildConfig);
-
-		// do nothing if the same text channel is bound to both voice channels.
-		if (oldTextChannel === textChannel) {
-			return;
-		}
-
-		if (oldTextChannel) {
-			oldTextChannel.deletePermission(member.id)
-				.then(() => this.memberLeave(oldChannel, oldTextChannel, member, guildConfig))
-				.catch(() => false);
-		}
+		const textChannel = this.getTextChannel(channel);
+		const oldTextChannel = this.getTextChannel(oldChannel);
 		if (textChannel) {
 			textChannel.editPermission(member.id, 68608, null, 'member')
 				.then(() => this.memberJoin(channel, textChannel, member, guildConfig))
+				.catch(() => false);
+		}
+		if (oldTextChannel) {
+			oldTextChannel.deletePermission(member.id)
+				.then(() => this.memberLeave(oldChannel, oldTextChannel, member, guildConfig))
 				.catch(() => false);
 		}
 	}

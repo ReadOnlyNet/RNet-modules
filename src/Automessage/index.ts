@@ -1,8 +1,8 @@
-import { Module } from '@rnet.cf/rnet-core';
+import {Module} from '@rnet.cf/rnet-core';
 import * as eris from '@rnet.cf/eris';
+import * as each from 'async-each';
 import * as rnet from 'RNet';
 import * as moment from 'moment';
-import { default as Model } from './models/Automessage';
 
 /**
  * Automessage Module
@@ -10,16 +10,15 @@ import { default as Model } from './models/Automessage';
  * @extends Module
  */
 export default class Automessage extends Module {
-	public module      : string  = 'Automessage';
-	public friendlyName: string  = 'Auto Message';
-	public description : string  = 'Automatically post timed messages in a channel.';
-	public list        : boolean = true;
-	public enabled     : boolean = true;
-	public hasPartial  : boolean = true;
-	public moduleModels: any[]   = [Model];
+	public module      : string   = 'Automessage';
+	public friendlyName: string   = 'Auto Message';
+	public description : string   = 'Automatically post timed messages in a channel.';
+	public list        : boolean  = true;
+	public enabled     : boolean  = true;
+	public hasPartial  : boolean  = false;
 
 	public start() {
-		// this.schedule('1,16,31,46 * * * * *', this.post.bind(this));
+		this.schedule('*/1 * * * *', this.post.bind(this));
 	}
 
 	public async post() {
@@ -36,27 +35,13 @@ export default class Automessage extends Module {
 
 		this.logger.debug(`Found ${docs.length} messages to post.`);
 
-		this.utils.asyncForEach(docs, async (doc: any) => {
+		each(docs, (doc: any, next: any) => {
+			if (!this.client.guilds.has(doc.guild)) {
+				return next();
+			}
+
 			if (doc.disabled) {
-				return;
-			}
-
-			const guild = this.client.guilds.get(doc.guild);
-			if (!guild) {
-				return;
-			}
-
-			const guildConfig = await this.rnet.guilds.getOrFetch(doc.guild);
-			if (!this.isEnabled(guild, this.module, guildConfig)) {
-				if (!guildConfig.modules.Automessage || guildConfig.modules.Automessage === false) {
-					this.models.Automessage.remove({ _id: doc._id }).catch(() => null);
-				}
-				return;
-			}
-
-			const channel = guild.channels.get(doc.channel);
-			if (!channel) {
-				return;
+				return next();
 			}
 
 			this.logger.debug(`Posting ${doc.guild}`);
@@ -73,23 +58,19 @@ export default class Automessage extends Module {
 
 			this.postWebhook(doc.channel, doc.webhook, options)
 				.then(() => {
-					const second = moment().second();
-					const nextPost = moment()
-						.add(doc.interval, 'minutes')
-						.subtract(second % 15, 'seconds')
-						.toDate();
-
+					const nextPost = moment().add(doc.interval, 'minutes');
 					return this.models.Automessage.update({ _id: doc._id }, { $set: { nextPost: nextPost } }).catch(() => null);
 				})
 				.catch(() => {
 					let update = { $inc: { errorCount: 1 } };
 					if (doc.errorCount >= 5) {
 						update = Object.assign(update, {
-							$set: { disabled: true, disabledAt: moment().toDate() },
+							$set: { disabled: true },
 						});
 					}
 					return this.models.Automessage.update({ _id: doc._id }, update).catch(() => null);
-				});
+				})
+				.then(next);
 		});
 	}
 

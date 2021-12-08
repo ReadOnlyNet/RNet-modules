@@ -1,4 +1,4 @@
-import { Module } from '@rnet.cf/rnet-core';
+import {Module} from '@rnet.cf/rnet-core';
 import * as eris from '@rnet.cf/eris';
 import * as rnet from 'RNet';
 import * as moment from 'moment';
@@ -132,22 +132,16 @@ export default class AFK extends Module {
 		guildConfig.afk = guildConfig.afk || {};
 		guildConfig.afk.ignoredChannels = guildConfig.afk.ignoredChannels || [];
 
-		const index = guildConfig.afk.ignoredChannels.indexOf(message.channel.id);
-		let response;
-
-		if (index > -1) {
-			guildConfig.afk.ignoredChannels.splice(index, 1);
-			response = `Removed <#${message.channel.id}> from AFK ignored channels.`;
-		} else {
-			guildConfig.afk.ignoredChannels.push(message.channel.id);
-			response = `Added <#${message.channel.id}> to AFK ignored channels.`;
+		if (guildConfig.afk.ignoredChannels.includes(message.channel.id)) {
+			return Promise.reject('This channel is already ignored.');
 		}
+
+		guildConfig.afk.ignoredChannels.push(message.channel.id);
 
 		try {
 			await this.rnet.guilds.update(guild.id, { $set: { 'afk.ignoredChannels': guildConfig.afk.ignoredChannels } });
-			return Promise.resolve(response);
-		} catch (err) {
-			console.error(err);
+			return Promise.resolve(`Added ${(<eris.GuildChannel>message.channel).mention} to AFK ignored channels.`);
+		} catch {
 			return Promise.reject('Something went wrong.');
 		}
 	}

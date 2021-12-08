@@ -1,4 +1,4 @@
-import { Module } from '@rnet.cf/rnet-core';
+import {Module} from '@rnet.cf/rnet-core';
 import * as eris from '@rnet.cf/eris';
 import * as each from 'async-each';
 import * as rnet from 'RNet';
@@ -19,7 +19,7 @@ export default class Reminders extends Module {
 
 	public start() {
 		// create the cron job
-		// this.schedule('*/1 * * * *', this.processReminders.bind(this));
+		this.schedule('*/1 * * * *', this.processReminders.bind(this));
 	}
 
 	/**

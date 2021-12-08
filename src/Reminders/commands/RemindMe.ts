@@ -9,8 +9,8 @@ export default class RemindMe extends Command {
 	public group       : string   = 'Misc';
 	public module      : string   = 'Reminders';
 	public description : string   = 'Set a reminder';
-	public usage       : string   = 'remindme [time] [reminder]';
-	public example     : string   = `remindme 2 days It's tournament day!`;
+	public usage       : string   = 'remindme [reminder]';
+	public example     : string   = 'remindme to buy some game in 10 days';
 	public expectedArgs: number   = 1;
 	public cooldown    : number   = 5000;
 

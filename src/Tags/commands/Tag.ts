@@ -1,4 +1,5 @@
-import { Command, CommandData, SubCommand } from '@rnet.cf/rnet-core';
+import {Command} from '@rnet.cf/rnet-core';
+import * as core from '@rnet.cf/rnet-core';
 import * as eris from '@rnet.cf/eris';
 import Tags from '../index';
 
@@ -12,20 +13,18 @@ export default class Tag extends Command {
 	public defaultCommand: string   = 'get';
 	public defaultUsage  : string   = 'tag [tag name]';
 
-	public commands: SubCommand[] = [
+	public commands: core.SubCommand[] = [
 		{ name: 'get', desc: 'Get a tag by name.', default: true, usage: 'get [tag name]', cooldown: 5000 },
 		{ name: 'create', desc: 'Create a new tag.', usage: 'create [tag name] [content]', cooldown: 10000 },
 		{ name: 'edit', desc: 'Edit an existing tag.', usage: 'edit [tag name] [content]', cooldown: 10000 },
 		{ name: 'delete', desc: 'Delete an existing tag.', usage: 'delete [tag name]', cooldown: 5000 },
 	];
-
 	public usage: string[] = [
-		'tag [tag name]',
 		'tag create [tag name] [content]',
+		'tag get [tag name]',
 		'tag edit [tag name] [content]',
 		'tag delete [tag name]',
 	];
-
 	public example: string[] = [
 		'tag create how2invite Invite RNet to your server at https://www.rnet.cf/',
 		'tag edit how2invite Invite RNet to your server at https://www.rnet.cf/invite',
@@ -35,7 +34,7 @@ export default class Tag extends Command {
 
 	private _tags: Tags;
 
-	public execute({ message, args }: CommandData) {
+	public execute({ message, args }: core.CommandData) {
 		if (!args || !args.length) {
 			return this.error(message.channel, `Please give a tag name`);
 		}
@@ -44,17 +43,13 @@ export default class Tag extends Command {
 		return Promise.resolve();
 	}
 
-	public get({ message, args, guildConfig }: CommandData) {
-		if (!args || !args.length) {
-			return this.help(message, guildConfig);
-		}
-
+	public get({ message, args, guildConfig }: core.CommandData) {
 		return this._tags.getTag(message, args[0], guildConfig)
 			.then((res: string) => this.sendMessage(message.channel, res))
 			.catch((err: string) => this.error(message.channel, err));
 	}
 
-	public create({ message, args, guildConfig }: CommandData) {
+	public create({ message, args, guildConfig }: core.CommandData) {
 		if (args.length < 2) {
 			return this.error(message.channel, `You must give a tag name and tag content.`);
 		}
@@ -74,7 +69,7 @@ export default class Tag extends Command {
 			.catch((err: string) => this.error(message.channel, err));
 	}
 
-	public async edit({ message, args, guildConfig }: CommandData) {
+	public async edit({ message, args, guildConfig }: core.CommandData) {
 		if (args.length < 2) {
 			return this.error(message.channel, `You must give a tag name and tag content.`);
 		}
@@ -88,12 +83,12 @@ export default class Tag extends Command {
 			return this.error(message.channel, 'Something went wrong.');
 		}
 
-		return this._tags.createOrEdit(message, args[0], args.slice(1).join(' '), guildConfig, true)
+		return this._tags.createOrEdit(message, args[0], args.slice(1).join(' '), guildConfig)
 			.then(() => this.success(message.channel, `Tag ${args[0]} edited.`))
 			.catch((err: string) => this.error(message.channel, err));
 	}
 
-	public delete({ message, args, guildConfig }: CommandData) {
+	public delete({ message, args, guildConfig }: core.CommandData) {
 		return this._tags.deleteTag(message, args[0], guildConfig)
 			.then((res: string) => this.success(message.channel, res))
 			.catch((err: string) => this.error(message.channel, err));

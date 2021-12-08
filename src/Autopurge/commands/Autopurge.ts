@@ -1,12 +1,12 @@
-import { Command, CommandData, SubCommand } from '@rnet.cf/rnet-core';
+import {Command} from '@rnet.cf/rnet-core';
+import * as core from '@rnet.cf/rnet-core';
 import * as eris from '@rnet.cf/eris';
 import * as moment from 'moment-timezone';
 
 export default class Autopurge extends Command {
 	public aliases            : string[]          = ['autopurge'];
-	public group              : string            = 'Autopurge';
+	public group              : string            = 'Manager';
 	public module             : string            = 'Autopurge';
-	public friendlyName       : string            = 'Autopurge';
 	public description        : string            = 'Add or remove a channel for automatic purging';
 	public permissions        : string            = 'serverAdmin';
 	public cooldown           : number            = 6000;
@@ -14,10 +14,10 @@ export default class Autopurge extends Command {
 	public defaultCommand     : string            = 'list';
 	public defaultUsage       : string            = 'autopurge';
 	public requiredPermissions: string[]          = ['manageMessages'];
-	public commands           : SubCommand[] = [
+	public commands           : core.SubCommand[] = [
 		{ name: 'list', desc: 'List auto purge channels.', default: true, usage: 'list' },
 		{ name: 'enable', desc: 'Enable auto purge for a channel.', usage: 'enable [channel] [interval]' },
-		{ name: 'disable', desc: 'Disable auto purge for a channel.', usage: 'disable [channel]' },
+		{ name: 'disable', desc: 'Disable auto purge for a channel.', usage: 'enable [channel]' },
 	];
 	public usage: string[] = [
 		'autopurge enable [channel] [interval]',
@@ -33,7 +33,7 @@ export default class Autopurge extends Command {
 		return Promise.resolve();
 	}
 
-	public async list({ message, args, guildConfig }: CommandData) {
+	public async list({ message, args, guildConfig }: core.CommandData) {
 		let docs;
 		try {
 			docs = await this.getDocs(message);
@@ -56,7 +56,7 @@ export default class Autopurge extends Command {
 		return this.sendMessage(message.channel, list.join('\n'));
 	}
 
-	public async enable({ message, args }: CommandData) {
+	public async enable({ message, args }: core.CommandData) {
 		const guild = (<eris.GuildChannel>message.channel).guild;
 		const channel = this.resolveChannel(guild, args[0]);
 		if (!channel) {
@@ -101,7 +101,7 @@ export default class Autopurge extends Command {
 			.catch((err: Error) => this.error(message.channel, `Something went wrong, please try again`, err));
 	}
 
-	public async disable({ message, args }: CommandData) {
+	public async disable({ message, args }: core.CommandData) {
 		const guild = (<eris.GuildChannel>message.channel).guild;
 		const channel = this.resolveChannel(guild, args[0]);
 		if (!channel) {

@@ -1,8 +1,11 @@
-import { Module, Purger } from '@rnet.cf/rnet-core';
+import {Module, Purger} from '@rnet.cf/rnet-core';
 import * as eris from '@rnet.cf/eris';
+import * as each from 'async-each';
 import * as rnet from 'RNet';
 import * as moment from 'moment';
-import { default as Model } from './models/Autopurge';
+import * as commands from './commands';
+
+// const Purger = Loader.require('./helpers/Purger');
 
 /**
  * Auto Purge Module
@@ -14,17 +17,15 @@ export default class Autopurge extends Module {
 	public friendlyName: string   = 'Auto Purge';
 	public description : string   = 'Automatically purge messages in a channel at configurable times.';
 	public list        : boolean  = true;
-	public enabled     : boolean  = false;
-	public hasPartial  : boolean  = true;
-	public vipOnly     : boolean  = true;
+	public enabled     : boolean  = true;
+	public hasPartial  : boolean  = false;
 	public permissions : string[] = ['manageMessages'];
-	public moduleModels: any[]   = [Model];
-	// public commands    : {}       = commands;
+	public commands    : {}       = commands;
 	protected purger   : Purger;
 
 	public start() {
-	// 	this.purger = new Purger(this.rnet);
-	// 	this.schedule('0,15,30,45 * * * * *', this.purge.bind(this));
+		this.purger = new Purger(this.rnet);
+		this.schedule('*/1 * * * *', this.purge.bind(this));
 	}
 
 	public async purge() {
@@ -41,34 +42,20 @@ export default class Autopurge extends Module {
 
 		this.logger.debug(`Found ${docs.length} channels to purge.`);
 
-		this.utils.asyncForEach(docs, async (doc: any) => {
-			const guild = this.client.guilds.get(doc.guild);
-			if (!guild) {
-				return;
-			}
-
-			const guildConfig = await this.rnet.guilds.getOrFetch(doc.guild);
-			if (!this.isEnabled(guild, this.module, guildConfig)) {
-				if (!guildConfig.modules.Autopurge || guildConfig.modules.Autopurge === false) {
-					this.models.Autopurge.remove({ _id: doc._id }).catch(() => null);
-				}
-				return;
-			}
-
-			const channel = guild.channels.get(doc.channel);
-			if (!channel) {
-				return;
+		each(docs, (doc: any, next: Function) => {
+			if (!this.client.guilds.has(doc.guild)) {
+				return next();
 			}
 
 			this.logger.debug(`Purging ${doc.guild}`);
 
 			this.purger.purge(doc.channel, { limit: 5000 })
 				.then(() => {
-					const nextPurge = moment().add(doc.interval, 'minutes').toDate();
+					const nextPurge = moment().add(doc.interval, 'minutes');
 					return this.models.Autopurge.update({ _id: doc._id }, { $set: { nextPurge: nextPurge } });
 				})
 				.catch(() => null);
-			return;
+			return next();
 		});
 	}
 }
