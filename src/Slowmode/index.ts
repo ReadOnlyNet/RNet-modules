@@ -19,8 +19,6 @@ export default class Slowmode extends Module {
 	public permissions : string[] = ['manageMessages'];
 	public commands    : {}       = commands;
 
-	private cooldowns: Map<string, number>;
-
 	get settings() {
 		return {
 			channels: { type: Array, default: [] },
@@ -113,13 +111,17 @@ export default class Slowmode extends Module {
 		if (channel.user) {
 			const cooldown = this.cooldowns.get(`${message.channel.id}.${message.author.id}`);
 			if (cooldown && (Date.now() - cooldown) < time) {
-				return message.delete().catch((err: string) => err);
+				return message.delete()
+					.then(() => this.statsd.increment('slowmode.success', 1))
+					.catch(() => this.statsd.increment('slowmode.error', 1));
 			}
 			this.cooldowns.set(`${message.channel.id}.${message.author.id}`, Date.now());
 		} else {
 			const cooldown = this.cooldowns.get(message.channel.id);
 			if (cooldown && (Date.now() - cooldown) < time) {
-				return message.delete().catch((err: string) => err);
+				return message.delete()
+					.then(() => this.statsd.increment('slowmode.success', 1))
+					.catch(() => this.statsd.increment('slowmode.error', 1));
 			}
 			this.cooldowns.set(message.channel.id, Date.now());
 		}

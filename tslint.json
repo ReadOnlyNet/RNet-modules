@@ -36,7 +36,6 @@
     "no-multiline-string": false,
     "no-single-line-block-comment": false,
     "no-backbone-get-set-outside-model": false,
-    "no-parameter-reassignment": false,
     "prefer-object-spread": false,
     "strict-boolean-expressions": false,
     "function-name": false,

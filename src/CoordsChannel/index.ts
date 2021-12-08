@@ -15,8 +15,6 @@ export default class CoordsChannel extends Module {
 	public enabled     : boolean = false;
 	public hasPartial  : boolean = true;
 
-	private _floatRegex: RegExp;
-
 	get settings() {
 		return {
 			channels: { type: Array, default: [] },

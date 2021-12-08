@@ -1,6 +1,5 @@
 import { Module } from '@rnet.cf/rnet-core';
-import * as eris from '@rnet.cf/eris';
-import * as rnet from 'RNet';
+import * as each from 'async-each';
 import * as moment from 'moment';
 import { default as Model } from './models/Automessage';
 
@@ -19,7 +18,7 @@ export default class Automessage extends Module {
 	public moduleModels: any[]   = [Model];
 
 	public start() {
-		// this.schedule('1,16,31,46 * * * * *', this.post.bind(this));
+		this.schedule('1,16,31,46 * * * * *', this.post.bind(this));
 	}
 
 	public async post() {
@@ -36,14 +35,14 @@ export default class Automessage extends Module {
 
 		this.logger.debug(`Found ${docs.length} messages to post.`);
 
-		this.utils.asyncForEach(docs, async (doc: any) => {
+		each(docs, async (doc: any, next: any) => {
 			if (doc.disabled) {
-				return;
+				return next();
 			}
 
 			const guild = this.client.guilds.get(doc.guild);
 			if (!guild) {
-				return;
+				return next();
 			}
 
 			const guildConfig = await this.rnet.guilds.getOrFetch(doc.guild);
@@ -51,12 +50,12 @@ export default class Automessage extends Module {
 				if (!guildConfig.modules.Automessage || guildConfig.modules.Automessage === false) {
 					this.models.Automessage.remove({ _id: doc._id }).catch(() => null);
 				}
-				return;
+				return next();
 			}
 
 			const channel = guild.channels.get(doc.channel);
 			if (!channel) {
-				return;
+				return next();
 			}
 
 			this.logger.debug(`Posting ${doc.guild}`);
@@ -79,17 +78,20 @@ export default class Automessage extends Module {
 						.subtract(second % 15, 'seconds')
 						.toDate();
 
+					this.statsd.increment('automessage.success', 1);
 					return this.models.Automessage.update({ _id: doc._id }, { $set: { nextPost: nextPost } }).catch(() => null);
 				})
 				.catch(() => {
 					let update = { $inc: { errorCount: 1 } };
+					this.statsd.increment('automessage.error', 1);
 					if (doc.errorCount >= 5) {
 						update = Object.assign(update, {
 							$set: { disabled: true, disabledAt: moment().toDate() },
 						});
 					}
 					return this.models.Automessage.update({ _id: doc._id }, update).catch(() => null);
-				});
+				})
+				.then(next);
 		});
 	}
 

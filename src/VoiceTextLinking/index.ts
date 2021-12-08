@@ -16,10 +16,9 @@ export default class VoiceTextLinking extends Module {
 	public list: boolean = true;
 	public enabled: boolean = false;
 	public hasPartial: boolean = true;
+	public vipOnly: boolean  = true;
 
 	public permissions: string[] = ['manageChannels'];
-
-	public purger: Purger;
 
 	get settings() {
 		return {
@@ -49,7 +48,7 @@ export default class VoiceTextLinking extends Module {
 		}
 	}
 
-	public memberJoin(channel: eris.VoiceChannel, textChannel: eris.AnyGuildChannel, member: eris.Member, guildConfig: rnet.GuildConfig) {
+	public memberJoin(channel: eris.VoiceChannel, textChannel: eris.GuildChannel, member: eris.Member, guildConfig: rnet.GuildConfig) {
 		const voiceConfig = guildConfig.voicetextlinking;
 		if (!voiceConfig) { return; }
 		if (voiceConfig.announceMember) {
@@ -59,7 +58,7 @@ export default class VoiceTextLinking extends Module {
 		}
 	}
 
-	public memberLeave(channel: eris.VoiceChannel, textChannel: eris.AnyGuildChannel, member: eris.Member, guildConfig: rnet.GuildConfig) {
+	public memberLeave(channel: eris.VoiceChannel, textChannel: eris.GuildChannel, member: eris.Member, guildConfig: rnet.GuildConfig) {
 		const voiceConfig = guildConfig.voicetextlinking;
 		if (!voiceConfig) { return; }
 		if (voiceConfig.announceMember) {
@@ -70,7 +69,7 @@ export default class VoiceTextLinking extends Module {
 
 		if (voiceConfig.purgeChannel) {
 			if (channel.voiceMembers.size === 0) {
-				this.purger.purge(<eris.TextChannel>textChannel, 5000).catch(() => null);
+				this.purger.purge(textChannel, 5000).catch(() => null);
 			}
 		}
 	}
@@ -99,20 +98,14 @@ export default class VoiceTextLinking extends Module {
 		if (!this.isEnabled(guild, this.module, guildConfig)) { return; }
 		const textChannel = this.getTextChannel(channel, guildConfig);
 		const oldTextChannel = this.getTextChannel(oldChannel, guildConfig);
-
-		// do nothing if the same text channel is bound to both voice channels.
-		if (oldTextChannel === textChannel) {
-			return;
-		}
-
-		if (oldTextChannel) {
-			oldTextChannel.deletePermission(member.id)
-				.then(() => this.memberLeave(oldChannel, oldTextChannel, member, guildConfig))
-				.catch(() => false);
-		}
 		if (textChannel) {
 			textChannel.editPermission(member.id, 68608, null, 'member')
 				.then(() => this.memberJoin(channel, textChannel, member, guildConfig))
+				.catch(() => false);
+		}
+		if (oldTextChannel) {
+			oldTextChannel.deletePermission(member.id)
+				.then(() => this.memberLeave(oldChannel, oldTextChannel, member, guildConfig))
 				.catch(() => false);
 		}
 	}

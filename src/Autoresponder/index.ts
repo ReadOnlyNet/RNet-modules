@@ -16,10 +16,6 @@ export default class Autoresponder extends Module {
 	public enabled    : boolean = true;
 	public hasPartial : boolean = true;
 
-	private _cooldowns: Map<string, number>;
-	private _emojis: any;
-	private _ignoredUsers: Set<string>;
-
 	get settings() {
 		return {
 			commands: { type: Array, default: [] },
@@ -31,13 +27,11 @@ export default class Autoresponder extends Module {
 		this.schedule('*/1 * * * *', this.clearCooldowns.bind(this));
 
 		this._emojis = Object.values(emojis).reduce((a: any[], arr: any[]) => a.concat(arr), []);
-		this._ignoredUsers = new Set();
 	}
 
 	/**
 	 * Message create event handler
 	 */
-	// tslint:disable-next-line:cyclomatic-complexity
 	public messageCreate({ message, guildConfig }: any) {
 		if (!message.member ||
 			message.author.bot ||
@@ -70,54 +64,35 @@ export default class Autoresponder extends Module {
 		this._cooldowns.set(message.author.id, Date.now());
 
 		if (result.ignoredChannels && result.ignoredChannels.length) {
-			if (result.ignoredChannels.find((c: any) => c.id === message.channel.id ||
-				(message.channel.parentID && message.channel.parentID === c.id))) {
+			if (result.ignoredChannels.find((c: any) => c.id === message.channel.id)) {
 					return null;
 				}
 		}
 
 		if (result.allowedChannels && result.allowedChannels.length) {
-			if (!result.allowedChannels.find((c: any) => c.id === message.channel.id ||
-				(message.channel.parentID && message.channel.parentID === c.id))) {
+			if (!result.allowedChannels.find((c: any) => c.id === message.channel.id)) {
 					return null;
 				}
 		}
 
 		if (result.type === 'reaction') {
-			if (this._ignoredUsers.has(message.author.id)) {
-				return;
-			}
-
-			const reactions = result.reactions.map((r: any) => r.native || `${r.animated ? 'a' : ''}${r.colons}${r._id}`);
-
+			if (!this.config.isPremium) { return; }
+			const reactions = result.reactions.map((r: any) => r.native ? this.resolveNative(r) : `${r.name}:${r._id}`);
 			for (const r of reactions) {
-				this.client.addMessageReaction(message.channel.id, message.id, r).catch((err: any) => {
-					if (err && err.code === 90001) {
-						return this._ignoredUsers.add(message.author.id);
-					}
-					this.logger.error(err);
-				});
-
-				this.rnet.internalEvents.emit('autoresponder', { type: 'reaction', guild: message.channel.guild });
+				this.client.addMessageReaction(message.channel.id, message.id, r)
+					.then(() => this.statsd.increment('autoresponder.reactions.success', 1))
+					.catch(() => this.statsd.increment('autoresponder.reactions.error'));
 			}
 
 			return;
 		}
 
-		const sendOpts = {
-			disableEveryone: true,
-		};
-
-		if (result.response.includes('{everyone}') || result.response.includes('{here}')) {
-			sendOpts.disableEveryone = false;
-		}
-
 		const data = { guild: message.channel.guild, channel: message.channel, user: message.member };
 		const response = this.utils.replacer(result.response, data);
 
-		this.sendMessage(message.channel, response);
-
-		this.rnet.internalEvents.emit('autoresponder', { type: 'message', guild: message.channel.guild });
+		this.sendMessage(message.channel, response)
+			.then(() => this.statsd.increment('autoresponder.messages.success', 1))
+			.catch(() => this.statsd.increment('autoresponder.messages.error', 1));
 	}
 
 	private resolveNative(emoji: any) {

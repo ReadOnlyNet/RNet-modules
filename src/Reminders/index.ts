@@ -19,7 +19,7 @@ export default class Reminders extends Module {
 
 	public start() {
 		// create the cron job
-		// this.schedule('*/1 * * * *', this.processReminders.bind(this));
+		this.schedule('*/1 * * * *', this.processReminders.bind(this));
 	}
 
 	/**

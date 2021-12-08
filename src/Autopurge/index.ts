@@ -1,5 +1,6 @@
 import { Module, Purger } from '@rnet.cf/rnet-core';
 import * as eris from '@rnet.cf/eris';
+import * as each from 'async-each';
 import * as rnet from 'RNet';
 import * as moment from 'moment';
 import { default as Model } from './models/Autopurge';
@@ -23,8 +24,8 @@ export default class Autopurge extends Module {
 	protected purger   : Purger;
 
 	public start() {
-	// 	this.purger = new Purger(this.rnet);
-	// 	this.schedule('0,15,30,45 * * * * *', this.purge.bind(this));
+		this.purger = new Purger(this.rnet);
+		this.schedule('0,15,30,45 * * * * *', this.purge.bind(this));
 	}
 
 	public async purge() {
@@ -41,10 +42,10 @@ export default class Autopurge extends Module {
 
 		this.logger.debug(`Found ${docs.length} channels to purge.`);
 
-		this.utils.asyncForEach(docs, async (doc: any) => {
+		each(docs, async (doc: any, next: Function) => {
 			const guild = this.client.guilds.get(doc.guild);
 			if (!guild) {
-				return;
+				return next();
 			}
 
 			const guildConfig = await this.rnet.guilds.getOrFetch(doc.guild);
@@ -52,12 +53,12 @@ export default class Autopurge extends Module {
 				if (!guildConfig.modules.Autopurge || guildConfig.modules.Autopurge === false) {
 					this.models.Autopurge.remove({ _id: doc._id }).catch(() => null);
 				}
-				return;
+				return next();
 			}
 
 			const channel = guild.channels.get(doc.channel);
 			if (!channel) {
-				return;
+				return next();
 			}
 
 			this.logger.debug(`Purging ${doc.guild}`);
@@ -65,10 +66,11 @@ export default class Autopurge extends Module {
 			this.purger.purge(doc.channel, { limit: 5000 })
 				.then(() => {
 					const nextPurge = moment().add(doc.interval, 'minutes').toDate();
+					this.statsd.increment('autopurge.success', 1);
 					return this.models.Autopurge.update({ _id: doc._id }, { $set: { nextPurge: nextPurge } });
 				})
-				.catch(() => null);
-			return;
+				.catch(() => this.statsd.increment('autopurge.error', 1));
+			return next();
 		});
 	}
 }

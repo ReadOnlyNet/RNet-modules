@@ -14,9 +14,6 @@ export default class Announcements extends Module {
 	public enabled    : boolean = true;
 	public hasPartial : boolean = true;
 
-	private bans: string[];
-	private defaults: any;
-
 	get settings() {
 		return {
 			channel:      String,
@@ -94,26 +91,28 @@ export default class Announcements extends Module {
 			joinMessage = this.defaults.joinMessage;
 		}
 
-		const sendOpts : any = {};
-
-		if (joinMessage.includes('{everyone}') || joinMessage.includes('{here}')) {
-			sendOpts.disableEveryone = false;
-		}
-
 		const data = { guild: guild, channel: channel, user: member };
 		const message = this.utils.replacer(joinMessage, data);
 
 		if (!dmJoins) {
-			return this.sendMessage(channel, message, sendOpts);
+			return this.sendMessage(channel, message)
+				.then(() => this.statsd.increment('announcements.join', 1))
+				.catch(() => this.statsd.increment('announcements.error', 1));
 		}
 
 		return this.client.getDMChannel(member.id)
-			.then((dmChannel: eris.PrivateChannel) => this.sendMessage(dmChannel, message).catch((err: string) => this.logger.error(err)))
-			.catch((err: string) => this.logger.error(err, {
-				type: 'announcements.guildMemberAdd.getDMChannel',
-				guild: guild.id,
-				shard: guild.shard.id,
-			}));
+			.then((dmChannel: eris.PrivateChannel) =>
+				this.sendMessage(dmChannel, message)
+					.then(() => this.increment('announcements.dm', 1))
+					.catch(() => this.statsd.increment('announcements.error', 1)))
+			.catch((err: string) => {
+				this.statsd.increment('announcements.error', 1);
+				this.logger.error(err, {
+					type: 'announcements.guildMemberAdd.getDMChannel',
+					guild: guild.id,
+					shard: guild.shard.id,
+				});
+			});
 	}
 
 	/**
@@ -149,7 +148,9 @@ export default class Announcements extends Module {
 		const data = { guild: guild, channel: channel, user: member };
 		const message = this.utils.replacer(leaveMessage, data, false);
 
-		return this.sendMessage(channel, message);
+		return this.sendMessage(channel, message)
+			.then(() => this.statsd.increment('announcements.leave', 1))
+			.catch(() => this.statsd.increment('announcements.error', 1));
 	}
 
 	/**
@@ -181,6 +182,8 @@ export default class Announcements extends Module {
 
 		this.bans.push(`${guild.id}${member.id}`);
 
-		return this.sendMessage(channel, message);
+		return this.sendMessage(channel, message)
+			.then(() => this.statsd.increment('announcements.ban', 1))
+			.catch(() => this.statsd.increment('announcements.error', 1));
 	}
 }

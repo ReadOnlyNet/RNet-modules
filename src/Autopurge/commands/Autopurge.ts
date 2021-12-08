@@ -17,7 +17,7 @@ export default class Autopurge extends Command {
 	public commands           : SubCommand[] = [
 		{ name: 'list', desc: 'List auto purge channels.', default: true, usage: 'list' },
 		{ name: 'enable', desc: 'Enable auto purge for a channel.', usage: 'enable [channel] [interval]' },
-		{ name: 'disable', desc: 'Disable auto purge for a channel.', usage: 'disable [channel]' },
+		{ name: 'disable', desc: 'Disable auto purge for a channel.', usage: 'enable [channel]' },
 	];
 	public usage: string[] = [
 		'autopurge enable [channel] [interval]',

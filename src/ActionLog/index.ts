@@ -25,8 +25,6 @@ export default class ActionLog extends Module {
 	public roles: Map<any, any> = new Map();
 	public invites: Set<any> = new Set();
 	private inviteRegex: RegExp;
-	private commandListener: Function;
-	private permCooldowns: Map<string, number>;
 
 	get settings() {
 		return {
@@ -263,13 +261,19 @@ export default class ActionLog extends Module {
 				return;
 			}
 
+			let desc = `${member.mention} ${this.utils.fullName(member)}`;
+			if (guildConfig.actionlog && guildConfig.actionlog.showLeaveRoles) {
+				const roles = member.roles.filter((r: string) => guild.roles.has(r)).map((r: string) => guild.roles.get(r).name);
+				desc += `\nRoles: ${roles.join(', ')}`;
+			}
+
 			const embed = {
 				color: this.utils.getColor('orange'),
 				author: {
 					name: 'Member Left',
 					icon_url: member.avatarURL,
 				},
-				description: `${member.mention} ${this.utils.fullName(member)}`,
+				description: desc,
 				thumbnail: null,
 				footer: { text: `ID: ${member.id}` },
 				timestamp: (new Date()).toISOString(),
@@ -343,24 +347,21 @@ export default class ActionLog extends Module {
 	 * @param {Message} options.oldMessage Old message object
 	 * @param {Object} options.guildConfig Guild configuration
 	 */
-	public async messageUpdate({ message, oldMessage, guildConfig }: any) {
-		if (!message || !message.author || message.author.bot) { return; }
-
-		if (!oldMessage) { return; }
+	public messageUpdate({ message, oldMessage, guildConfig }: any) {
+		if (!message || !oldMessage || !message.author || message.author.bot) { return; }
 		if (message.content === oldMessage.content) { return; }
 
 		this.shouldLog({ event: 'messageEdit', guild: message.guild, channel: message.channel, guildConfig })
 			.then((logChannel: eris.GuildChannel) => {
 				if (!logChannel) { return; }
 
-				const jumpLink = `[Jump to Message](https://discordapp.com/channels/${message.guild.id}/${message.channel.id}/${message.id})`;
 				const embed = {
 					color: this.utils.getColor('blue'),
 					author: {
 						name: this.utils.fullName(message.author, false),
 						icon_url: message.author.avatarURL,
 					},
-					description: `**Message edited in ${message.channel.mention || '#deleted-channel'}** ${jumpLink}`,
+					description: `**Message edited in ${message.channel.mention || '#deleted-channel'}**`,
 					fields: [
 						{ name: 'Before', value: oldMessage.content.length > 255 ?
 							`${oldMessage.content.substr(0, 252)}...` : `${oldMessage.content}` },
@@ -380,7 +381,7 @@ export default class ActionLog extends Module {
 	 * @param {Message} message Message object
 	 * @returns {*}
 	 */
-	public async messageDelete({ message, guildConfig }: any) {
+	public messageDelete({ message, guildConfig }: any) {
 		let guild = null;
 		let channel = null;
 
@@ -404,32 +405,26 @@ export default class ActionLog extends Module {
 			if (!logChannel) { return; }
 
 			if (!channel) {
-				channel = message.channel || channel;
+				channel = message.channel || {};
 			}
 
-			const authorText = message.author ? ` sent by ${message.author.mention}` : '';
+			const author = message && message.author ? ` sent by ${message.author.mention}` : '';
 			const embed = {
 				color: this.utils.getColor('orange'),
-				description: `**Message${authorText} deleted in ${channel.mention || '#deleted-channel'}**`,
+				description: `**Message${author} deleted in ${channel.mention || '#deleted-channel'}**`,
 				author: {
 					name: message.author ? this.utils.fullName(message.author, false) : guild.name,
 					icon_url: message.author ? message.author.avatarURL || null : guild.iconURL,
 				},
-				footer: { text: `Author: ${message.author ? message.author.id : '?'} | Message ID: ${message.id}` },
+				footer: { text: `ID: ${message.author ? message.author.id : channel.id}` },
 				timestamp: (new Date()).toISOString(),
 			};
 
 			if (message.cleanContent) {
 				embed.description += '\n';
-				embed.description += message.cleanContent.length > 500 ?
-					`${message.cleanContent.substr(0, 497)}...` :
+				embed.description += message.cleanContent.length > 255 ?
+					`${message.cleanContent.substr(0, 252)}...` :
 					message.cleanContent;
-			} else if (message.content) {
-				const content = message.content;
-				embed.description += '\n';
-				embed.description += content.length > 500 ?
-					`${content.substr(0, 497)}...` :
-					content;
 			}
 
 			this.logEvent(logChannel, embed, guildConfig);
@@ -925,7 +920,7 @@ export default class ActionLog extends Module {
 		}
 
 		if (channel && guildConfig.actionlog.ignoredChannels && guildConfig.actionlog.ignoredChannels.length) {
-			if (guildConfig.actionlog.ignoredChannels.find((c: any) => c.id === channel.id || (channel.parentID && channel.parentID === c.id))) {
+			if (guildConfig.actionlog.ignoredChannels.find((c: any) => c.id === channel.id || (c.parentID && c.parentID === channel.id))) {
 				return Promise.resolve(null);
 			}
 		}
@@ -933,8 +928,6 @@ export default class ActionLog extends Module {
 		const logChannel = typeof guildConfig.actionlog[event] === 'string' ?
 			guildConfig.actionlog[event] :
 			guildConfig.actionlog.channel;
-
-		this.rnet.internalEvents.emit('actionlog', { type: event, guild: guild });
 
 		return Promise.resolve(this.client.getChannel(logChannel));
 	}
@@ -972,23 +965,22 @@ export default class ActionLog extends Module {
 			return Promise.resolve();
 		}
 
-		if (channel.type !== 0) {
-			return Promise.resolve();
-		}
-
 		return this.sendWebhook((<eris.TextChannel>channel), { embeds: [embed] }, guildConfig)
 			.then(() => {
+				this.statsd.increment('actionlog.sent', 1);
 				if (guildConfig && guildConfig.missingWebhooks) {
 					delete guildConfig.missingWebhooks;
 					this.rnet.guilds.update(channel.guild.id, { $unset: { missingWebhooks: 1 } }).catch(() => false);
 				}
 			})
 			.catch(() => {
+				this.statsd.increment('actionlog.error', 1);
 				if (guildConfig && !guildConfig.missingWebhooks) {
 					guildConfig.missingWebhooks = 1;
 					this.rnet.guilds.update(channel.guild.id, { $set: { missingWebhooks: 1 } }).catch(() => false);
 				}
-				this.sendMessage((<eris.GuildChannel>channel), { embed });
+				this.sendMessage((<eris.GuildChannel>channel), { embed })
+					.then(() => this.statsd.increment('actionlog.sent', 1));
 				return Promise.resolve();
 			});
 	}

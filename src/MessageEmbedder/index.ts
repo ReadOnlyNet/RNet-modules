@@ -12,6 +12,7 @@ export default class MessageEmbedder extends Module {
 	public list       : boolean = true;
 	public enabled    : boolean = true;
 	public hasPartial : boolean = true;
+	public vipOnly    : boolean  = true;
 
 	public start() {}
 }

@@ -29,8 +29,6 @@ export default class Tags extends Module {
 
 		const tagConfig = guildConfig.tags;
 		let edit = false;
-		let count: number;
-		let result: any;
 
 		if (tagConfig && tagConfig.limitCreate) {
 			let canCreate = false;
@@ -58,10 +56,7 @@ export default class Tags extends Module {
 			}
 
 			try {
-				[count, result] = await Promise.all([
-					this.models.Tag.count({ guild: guild.id }),
-					this.models.Tag.findOne({ guild: guild.id, tag: tag }).lean().exec(),
-				]);
+				const result = await this.models.Tag.findOne({ guild: guild.id, tag: tag }).lean().exec();
 				canEdit = (result && result.author.id === message.member.id) ? true : canEdit;
 				if (result) {
 					if (!isEdit) {
@@ -76,12 +71,6 @@ export default class Tags extends Module {
 			} catch (err) {
 				return Promise.reject(`Something went wrong.`);
 			}
-		} else {
-			try {
-				count = await this.models.Tag.count({ guild: guild.id });
-			} catch (err) {
-				return Promise.reject(`Something went wrong.`);
-			}
 		}
 
 		const doc = {
@@ -93,10 +82,6 @@ export default class Tags extends Module {
 
 		if (edit) {
 			delete doc.author;
-		} else {
-			if (count >= (this.globalConfig.maxTags || 6000)) {
-				return Promise.reject(`You have created too many tags.`);
-			}
 		}
 
 		try {
@@ -180,14 +165,9 @@ export default class Tags extends Module {
 
 		guildId = guildId || guild.id;
 
-		let count: number;
-		let tags: any[];
-
+		let tags;
 		try {
-			[count, tags] = await Promise.all([
-				this.models.Tag.count({ guild: guildId }),
-				this.models.Tag.find({ guild: guildId }).limit(100).lean().exec(),
-			]);
+			tags = await this.models.Tag.find({ guild: guildId }).lean().exec();
 		} catch (err) {
 			return Promise.reject(`Something went wrong.`);
 		}
@@ -202,7 +182,7 @@ export default class Tags extends Module {
 
 		const embed = {
 			color: this.utils.getColor('blue'),
-			title: `Tags (${count})`,
+			title: 'Tags',
 			description: null,
 			fields: [],
 			footer: { text: `Use "${guildConfig.prefix || '?'}tag name" to show a tag` },
