@@ -27,7 +27,11 @@
   },
   "homepage": "https://github.com/ReadOnlyNet/RNet-modules#readme",
   "dependencies": {
+<<<<<<< HEAD
+    "@rnet.cf/rnet-core": "git+https://github.com/ReadOnlyNet/RNet-core",
+=======
     "@rnet.cf/rnet-core": "^1.0.0",
+>>>>>>> parent of 8c027b1 (upload)
     "async-each": "^1.0.1",
     "cleverbot-node": "^0.3.11",
     "emoji-regex": "^6.5.1",
@@ -38,7 +42,7 @@
     "source-map-support": "^0.4.18"
   },
   "devDependencies": {
-    "@rnet.cf/eris": "^0.8.2",
+    "@rnet.cf/eris": "git+https://github.com/ReadOnlyNet/eris",
     "@types/jest": "^21.1.0",
     "@types/moment-duration-format": "^1.3.8",
     "@types/node": "^8.0.30",
