@@ -27,7 +27,7 @@
   },
   "homepage": "https://github.com/ReadOnlyNet/RNet-modules#readme",
   "dependencies": {
-    "@rnet.cf/rnet-core": "^0.1.7",
+    "@rnet.cf/rnet-core": "git+https://github.com/ReadOnlyNet/RNet-core",
     "async-each": "^1.0.1",
     "cleverbot-node": "^0.3.11",
     "moment": "^2.19.1",
@@ -37,7 +37,7 @@
     "source-map-support": "^0.4.18"
   },
   "devDependencies": {
-    "@rnet.cf/eris": "^0.8.2",
+    "@rnet.cf/eris": "git+https://github.com/ReadOnlyNet/eris",
     "@types/jest": "^21.1.0",
     "@types/moment-duration-format": "^1.3.8",
     "@types/node": "^8.0.30",
